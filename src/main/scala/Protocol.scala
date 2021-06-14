@@ -5,7 +5,7 @@ import Protocol._
 enum Protocol:
   case Simple(s: String)
   case Error(msg: String)
-  case Bulk(b: Array[Byte])
+  case Bulk(b: Chunk[Byte])
   case Integer(i: Int)
   case Arr(arr: Vector[Protocol])
   case Nil
@@ -25,8 +25,8 @@ enum Protocol:
       )
     case Bulk(b) =>
       Chunk.Queue(
-        Chunk.array(s"$$${b.length}\r\n".getBytes),
-        Chunk.array(b),
+        Chunk.array(s"$$${b.size}\r\n".getBytes),
+        b,
         carriageReturn
       )
     case Nil =>
@@ -88,19 +88,20 @@ object Protocol:
                   Pull.pure(
                     Some(
                       (
-                        Bulk(payload.toArray),
+                        Bulk(payload),
                         Stream.chunk(finalRest.drop(2)) ++ rest
                       )
                     )
                   )
                 case '*' =>
                   val (n, after) = readLen(chunk)
-                  if n == -1 then 
+                  if n == -1 then
                     Pull.pure(Some(Nil, Stream.chunk(after) ++ rest))
-                  else readN(n, Stream.chunk(after) ++ rest).map {
-                    case (msgs, rest) =>
-                      Some((Arr(msgs.toVector), rest.drop(2)))
-                  }
+                  else
+                    readN(n, Stream.chunk(after) ++ rest).map {
+                      case (msgs, rest) =>
+                        Some((Arr(msgs.toVector), rest.drop(2)))
+                    }
                 case invalid =>
                   Pull.pure(Some((Error(s"invalid character $invalid"), rest)))
               }

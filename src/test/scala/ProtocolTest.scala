@@ -17,11 +17,11 @@ class ProtocolTest extends munit.FunSuite:
     assertEquals(result, Vector(Error("ciao")))
   }
   test("serialize/deserialize bulk") {
-    val arr = "ciao".getBytes
+    val arr = Chunk.array("ciao".getBytes)
     val bulk = Bulk(arr)
     val Vector(Bulk(obtained)) =
       read[SyncIO](Stream.chunk(bulk.bytes)).compile.toVector.unsafeRunSync()
-    assert(Arrays.equals(arr, obtained))
+    assertEquals(arr, obtained)
   }
 
   test("serialize/deserialize int") {
@@ -33,7 +33,6 @@ class ProtocolTest extends munit.FunSuite:
 
   test("serialize/deserialize array") {
     val bytes = Arr(Vector(Integer(2), Integer(3))).bytes
-    println(new String(bytes.toArray))
     val obtained =
       read[SyncIO](Stream.chunk(bytes)).compile.toVector.unsafeRunSync()
     assertEquals(Vector(Arr(Vector(Integer(2), Integer(3)))), obtained)
