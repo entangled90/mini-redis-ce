@@ -12,5 +12,7 @@ lazy val root = project
       "co.fs2" %% "fs2-io" % fs2Version,
       "org.scalameta" %% "munit" % "0.7.26" % Test,
       "org.typelevel" %% "munit-cats-effect-3" % "1.0.3" % Test
-    )
+    ),
+    run / fork := true,
+    javaOptions ++= Seq("-XX:+UseZGC", "-Xmx4096M")
   )

@@ -45,6 +45,11 @@ object Protocol:
       (new String(intPart.toArray).toInt, after)
     }
 
+    // def readInline(chunk: Chunk[Byte]): (Vector[Protocol], Chunk[Byte]) =
+    //   val msgs = Vector.newBuilder[Protocol]
+    //   chunk.foreach {b =>
+
+    //   }
     def readOne(
         s: Stream[F, Byte]
     ): Pull[F, INothing, Option[(Protocol, Stream[F, Byte])]] =
@@ -102,8 +107,16 @@ object Protocol:
                       case (msgs, rest) =>
                         Some((Arr(msgs.toVector), rest.drop(2)))
                     }
-                case invalid =>
-                  Pull.pure(Some((Error(s"invalid character $invalid"), rest)))
+                case other =>
+                  // this is an inline command:
+                  val msg = Arr(
+                    new String((Chunk.singleton(other) ++ chunk).toArray)
+                      .replace("\r\n", "")
+                      .split(' ')
+                      .map(s => Bulk(Chunk.array(s.getBytes)))
+                      .toVector
+                  )
+                  Pull.pure(Some((msg, rest)))
               }
             case None =>
               readOne(rest)

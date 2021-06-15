@@ -4,12 +4,26 @@ import cats.effect.SyncIO
 import java.util.Arrays
 
 class ProtocolTest extends munit.FunSuite:
+  // test("deserialize examples") {
+  //   List(
+  //     (
+  //       read[SyncIO](
+  //         Stream.chunk(Chunk(80, 73, 78, 71, 13, 10))
+  //       ).compile.lastOrError.unsafeRunSync(),
+  //       Simple("PING")
+  //     )
+  //   ).map { case (obtained, expected) =>
+  //     assertEquals(obtained, expected)
+  //   }
+  // }
+
   test("serialize/deserialize simple") {
     val result = read[SyncIO](
       Stream.chunk(Simple("ciao").bytes)
     ).compile.toVector.unsafeRunSync()
     assertEquals(result, Vector(Simple("ciao")))
   }
+
   test("serialize/deserialize error") {
     val result = read[SyncIO](
       Stream.chunk(Error("ciao").bytes)
