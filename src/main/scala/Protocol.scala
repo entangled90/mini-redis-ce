@@ -1,6 +1,7 @@
 import fs2._
 import cats.syntax.all._
 import Protocol._
+import cats._
 
 enum Protocol:
   case Simple(s: String)
@@ -10,7 +11,7 @@ enum Protocol:
   case Arr(arr: Vector[Protocol])
   case Nil
 
-  def bytes: Chunk[Byte] = this match {
+  def bytes: Chunk[Byte] = this match
     case Simple(s) =>
       Chunk.array(s"+$s\r\n".getBytes)
     case Error(msg) =>
@@ -30,126 +31,97 @@ enum Protocol:
         carriageReturn
       )
     case Nil =>
-      Chunk.array("$-1\r\n".getBytes)
-  }
+      NilChunk
 
 object Protocol:
-  private val carriageReturn: Chunk[Byte] = Chunk.array("\r\n".getBytes)
+
+  def bulk(s: String) = Bulk(Chunk.array(s.getBytes))
 
   def read[F[_]: RaiseThrowable](
       stream: Stream[F, Byte]
-  ): Stream[F, Protocol] = {
+  ): Stream[F, Protocol] =
 
-    def readLen(chunk: Chunk[Byte]): (Int, Chunk[Byte]) = {
+    def splitBy(chunk: Chunk[Byte], byte: Byte): Vector[Protocol] =
+      if chunk.isEmpty then Vector.empty
+      else
+        chunk.indexWhere(_ == byte) match {
+          case Some(idx) =>
+            val (c, rest) = chunk.splitAt(idx)
+            Bulk(c) +: splitBy(rest.drop(1), byte)
+          case None =>
+            Vector(Bulk(chunk))
+        }
+
+    def readLen(chunk: Chunk[Byte]): (Int, Chunk[Byte]) =
       val (intPart, after) = untilCarriageRet(chunk)
       (new String(intPart.toArray).toInt, after)
-    }
 
-    // def readInline(chunk: Chunk[Byte]): (Vector[Protocol], Chunk[Byte]) =
-    //   val msgs = Vector.newBuilder[Protocol]
-    //   chunk.foreach {b =>
+    // FIXME optimize
+    def readInt(chunk: Chunk[Byte]) = new String(chunk.toArray).toInt
 
-    //   }
     def readOne(
-        s: Stream[F, Byte]
-    ): Pull[F, INothing, Option[(Protocol, Stream[F, Byte])]] =
-      s.pull.uncons1.flatMap {
-        case Some((first, rest)) =>
-          rest.pull.uncons.flatMap {
-            case Some((chunk, rest)) =>
-              first match {
-                case '+' =>
-                  val (before, after) = untilCarriageRet(chunk)
-                  Pull.pure(
-                    Some(
-                      (
-                        Simple(new String(before.toArray)),
-                        Stream.chunk(after) ++ rest
-                      )
-                    )
-                  )
-                case '-' =>
-                  val (before, after) = untilCarriageRet(chunk)
-                  Pull.pure(
-                    Some(
-                      Error(new String(before.toArray)),
-                      Stream.chunk(after) ++ rest
-                    )
-                  )
-                case ':' =>
-                  val (before, after) = untilCarriageRet(chunk)
-                  Pull.pure(
-                    Some(
-                      (
-                        Integer(new String(before.toArray).toInt),
-                        Stream.chunk(after) ++ rest
-                      )
-                    )
-                  )
-                case '$' =>
-                  val (len, after) = readLen(chunk)
-                  val (payload, finalRest) = after.splitAt(len)
-                  // drop \r\n
-                  Pull.pure(
-                    Some(
-                      (
-                        Bulk(payload),
-                        Stream.chunk(finalRest.drop(2)) ++ rest
-                      )
-                    )
-                  )
-                case '*' =>
-                  val (n, after) = readLen(chunk)
-                  if n == -1 then
-                    Pull.pure(Some(Nil, Stream.chunk(after) ++ rest))
-                  else
-                    readN(n, Stream.chunk(after) ++ rest).map {
-                      case (msgs, rest) =>
-                        Some((Arr(msgs.toVector), rest.drop(2)))
-                    }
-                case other =>
-                  // this is an inline command:
-                  val msg = Arr(
-                    new String((Chunk.singleton(other) ++ chunk).toArray)
-                      .replace("\r\n", "")
-                      .split(' ')
-                      .map(s => Bulk(Chunk.array(s.getBytes)))
-                      .toVector
-                  )
-                  Pull.pure(Some((msg, rest)))
+        input: Chunk[Byte]
+    ): ParseResultSingle =
+      if input.isEmpty then Left(new Exception("Empty chunk"))
+      else
+        val first = input(0)
+        val chunk = input.drop(1)
+        first match
+          case '+' =>
+            val (before, after) = untilCarriageRet(chunk)
+            Right(Simple(new String(before.toArray)), after)
+          case '-' =>
+            val (before, after) = untilCarriageRet(chunk)
+            Right(Error(new String(before.toArray)), after)
+
+          case ':' =>
+            val (before, after) = untilCarriageRet(chunk)
+            Right((Integer(readInt(before)), after))
+          case '$' =>
+            val (len, after) = readLen(chunk)
+            val (payload, finalRest) = after.splitAt(len)
+            // drop \r\n
+            Right((Bulk(payload), finalRest.drop(2)))
+          case '*' =>
+            val (n, after) = readLen(chunk)
+            if n == -1 then Right((Nil, after))
+            else
+              readN(n, after).map { case (msgs, rest) =>
+                (Arr(msgs.toVector), rest.drop(2))
               }
-            case None =>
-              readOne(rest)
+          case other =>
+            val (before, after) = untilCarriageRet(input)
+            val splitted = splitBy(before, ' '.toByte)
+            Right((Arr(splitted), after))
+
+    def readN(
+        n: Int,
+        chunk: Chunk[Byte]
+    ): ParseResultN =
+      if n == 0 then Right((Vector.empty, chunk))
+      else
+        readOne(chunk).flatMap { (msg, rest) =>
+          readN(n - 1, rest).map { (msgs, rest) =>
+            (msg +: msgs, rest)
+          }
+        }
+
+    Pull.loop { (s: Stream[F, Byte]) =>
+      s.pull.uncons.flatMap {
+        case Some((chunk, rest)) =>
+          readOne(chunk) match {
+            case Right((msg, rem)) =>
+              Pull.output1(msg).as(Some(Stream.chunk[F, Byte](rem) ++ rest))
+            case Left(ex) =>
+              Pull.raiseError(ex)
           }
         case None =>
           Pull.pure(None)
       }
-
-    def readN(
-        n: Int,
-        stream: Stream[F, Byte]
-    ): Pull[F, INothing, (Chunk[Protocol], Stream[F, Byte])] = {
-      if n == 0 then Pull.pure((Chunk.empty, stream))
-      else
-        readOne(stream).flatMap {
-          case Some((el, rest)) =>
-            readN(n - 1, rest).map { case (chunk, rest) =>
-              (Chunk.singleton(el) ++ chunk, rest)
-            }
-          case None =>
-            Pull.pure((Chunk.empty, stream))
-        }
-    }
-
-    Pull.loop { (s: Stream[F, Byte]) =>
-      readOne(s).flatMap { x =>
-        x.traverse { case (msg, rest) => Pull.output1(msg).as(rest) }
-      }
     }(stream).stream
-  }
 
   // reads until carriage returns and consumes it
-  def untilCarriageRet(chunk: Chunk[Byte]): (Chunk[Byte], Chunk[Byte]) = {
+  def untilCarriageRet(chunk: Chunk[Byte]): (Chunk[Byte], Chunk[Byte]) =
     chunk.indexWhere(_ == '\r') match {
       case Some(i) =>
         if chunk.size > i + 1 then
@@ -164,4 +136,14 @@ object Protocol:
       case None =>
         (chunk, Chunk.empty)
     }
-  }
+
+  private val NilChunk = Chunk.array("$-1\r\n".getBytes)
+
+  private val carriageReturn: Chunk[Byte] = Chunk.array("\r\n".getBytes)
+
+  private type ParseResultT[L[_]] =
+    Either[Throwable, (L[Protocol], Chunk[Byte])]
+
+  private type ParseResultSingle = ParseResultT[Id]
+
+  private type ParseResultN = ParseResultT[Vector]

@@ -23,14 +23,6 @@ object Server:
       .map { client =>
         Stream.eval(log[F](LogLevel.Info, s"Client connected $client")) >>
           client.reads
-            // .chunks
-            // .evalTap(bytes =>
-            //   log(
-            //     Debug,
-            //     s"[$client] received $bytes, as string=${Try(new String(bytes.toArray))}"
-            //   )
-            // )
-            // .flatMap(Stream.chunk)
             .through(Protocol.read)
             .flatMap(
               handler(_)
@@ -39,7 +31,7 @@ object Server:
             )
             .onFinalizeCase { exitCase =>
               log(
-                Error,
+                Info,
                 s"Client $client stream terminated with exitCase $exitCase"
               )
             }

@@ -14,5 +14,10 @@ lazy val root = project
       "org.typelevel" %% "munit-cats-effect-3" % "1.0.3" % Test
     ),
     run / fork := true,
-    javaOptions ++= Seq("-XX:+UseZGC", "-Xmx4096M")
+    javaOptions ++= Seq(
+      "-XX:+UnlockExperimentalVMOptions",
+      "-XX:+EnableJVMCI",
+      "-XX:+UseJVMCICompiler",
+      "-Xmx4096M"
+    )
   )
