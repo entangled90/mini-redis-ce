@@ -45,7 +45,7 @@ object Server:
       db: DB[F]
   )(protocol: Protocol): Stream[F, Protocol] =
     def invalidCmd =
-      Stream.raiseError(new Exception(s"Invalid command $protocol"))
+      Stream(Protocol.Error(s"Invalid command $protocol"))
 
     def validKey(k: Protocol): Either[Throwable, DB.Key] = k match
       case Protocol.Simple(k) =>
@@ -55,7 +55,7 @@ object Server:
       case _ =>
         Left(new Exception(s"Invalid protocol type for key $k"))
 
-    protocol match
+    val stream = protocol match
       case Protocol.Arr(cmds) =>
         cmds.size match
           case 1 =>
@@ -93,22 +93,27 @@ object Server:
               case PUBLISH =>
                 Stream
                   .fromEither(validKey(cmds(1)))
-                  .evalMap(db.set(_, cmds(2)))
+                  .evalMap(db.publish(_, cmds(2)))
                   .as(OK)
+              case CONFIG =>
+                Stream(OK)
               case _ => invalidCmd
 
           case n =>
-            Stream.raiseError(
-              new Exception(s"unsupported number of cmds: $n: $cmds")
+            Stream(
+              Protocol.Error(s"unsupported number of cmds: $n: $cmds")
             )
 
       case _ =>
         invalidCmd
 
-  private final val GET = Protocol.Bulk(Chunk.array("GET".getBytes))
-  private final val SET = Protocol.Bulk(Chunk.array("SET".getBytes))
-  private final val OK = Protocol.Bulk(Chunk.array("OK".getBytes))
-  private final val PING = Protocol.Bulk(Chunk.array("PING".getBytes))
+    stream.handleError(e => Protocol.Error(e.getMessage))
+
+  private final val GET = Protocol.bulk("GET")
+  private final val SET = Protocol.bulk("SET")
+  private final val OK = Protocol.Simple("OK")
+  private final val PING = Protocol.bulk("PING")
   private final val PONG = Protocol.Simple("PONG")
-  private final val SUBSCRIBE = Protocol.Bulk(Chunk.array("SUBSCRIBE".getBytes))
-  private final val PUBLISH = Protocol.Bulk(Chunk.array("PUBLISH".getBytes))
+  private final val CONFIG = Protocol.bulk("PONG")
+  private final val SUBSCRIBE = Protocol.bulk("SUBSCRIBE")
+  private final val PUBLISH = Protocol.bulk("PUBLISH")

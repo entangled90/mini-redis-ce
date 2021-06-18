@@ -7,7 +7,7 @@ object Main extends IOApp {
   given loggerName: LoggerName = LoggerName("main")
   def run(args: List[String]) = {
     val stream = for {
-      db <- Stream.resource(DB.create[IO]())
+      db <- Stream.resource(DB.ref[IO]() >>= DB.behindQueue)
       _ <- Server[IO](db).concurrently(
         Stream.eval(Logger.log[IO](LogLevel.Info, "server started"))
       )

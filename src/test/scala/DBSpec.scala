@@ -5,7 +5,7 @@ import scala.concurrent.duration._
 
 class DBSpec extends CatsEffectSuite {
   test("get/put/remove no expire") {
-    DB.create[IO]().use { db =>
+    DB.ref[IO]().use { db =>
       for {
         _ <- db.set("ciao", Protocol.Simple("darwin"))
         res <- db.get("ciao")
@@ -18,7 +18,7 @@ class DBSpec extends CatsEffectSuite {
     }
   }
   test("Basic pub/sub") {
-    DB.create[IO]()
+    DB.ref[IO]()
       .use { db =>
         val subscribe = db.subscribe("key")
         val publish = (1 to 3).toList

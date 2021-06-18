@@ -23,7 +23,7 @@ object LogLevel:
   inline val Info = 200
   inline val Debug = 100
 
-  inline val MinLevel = 1000
+  inline val MinLevel = 0
 
   val Levels = Map(
     Error -> "ERROR",
@@ -37,15 +37,16 @@ object Logger:
       level: LogLevel,
       msg: String,
       ps: PrintStream = System.out
-  )(using name: LoggerName): F[Unit] = if level >= LogLevel.MinLevel then
-    Sync[F].delay {
-      ps.synchronized {
-        ps.print(
-          s"[${LogLevel.Levels(level)}] ${LocalDateTime.now} ${Thread.currentThread.getName} "
-        )
-        ps.print(name)
-        ps.print(" - ")
-        ps.println(msg)
+  )(using name: LoggerName): F[Unit] =
+    inline if level >= LogLevel.MinLevel then
+      Sync[F].delay {
+        ps.synchronized {
+          ps.print(
+            s"[${LogLevel.Levels(level)}] ${LocalDateTime.now} ${Thread.currentThread.getName} "
+          )
+          ps.print(name)
+          ps.print(" - ")
+          ps.println(msg)
+        }
       }
-    }
-  else Applicative[F].unit
+    else Applicative[F].unit

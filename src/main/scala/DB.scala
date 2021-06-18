@@ -8,6 +8,7 @@ import DB._
 import cats.effect.std.Queue
 import scala.concurrent.duration._
 import Logger._
+import fs2.concurrent._
 
 trait DB[F[_]]:
   def get(k: Key, expireAt: Option[Long] = None): F[Option[Value]]
@@ -30,7 +31,7 @@ object DB:
   object State:
     private[DB] def empty[F[_]] = State[F](Map.empty, Map.empty, Long.MinValue)
 
-  def create[F[_]: Async: Temporal: Clock: Spawn](
+  def ref[F[_]: Async: Temporal: Clock](
       queueSize: Int = 1024,
       maxQueued: Int = 1024
   ): Resource[F, DB[F]] =
@@ -38,6 +39,95 @@ object DB:
       ref <- Resource.eval(Ref.of(State.empty[F]))
       db <- Resource.make(RefDB(ref, queueSize, maxQueued).pure[F])(_.close)
     } yield db
+
+  def behindQueue[F[_]: Async: Temporal: Clock](
+      db: DB[F]
+  ): Resource[F, DB[F]] =
+    for {
+      channel <- Resource.eval(Channel.bounded[F, Op[F]](100 * 1024))
+      wrapped = new DB[F] {
+        def get(k: Key, expireAt: Option[Long] = None): F[Option[Value]] =
+          for {
+            deferred <- Deferred[F, Option[Value]]
+            op = new Op[F] {
+              type R = F[Option[Value]]
+              val query = _.get(k, expireAt)
+              val complete = _.flatMap(deferred.complete).void
+            }
+            v <- handleOp(op, deferred)
+          } yield v
+
+        def remove(k: Key): F[Unit] = for {
+          deferred <- Deferred[F, Unit]
+          op = new Op[F] {
+            type R = F[Unit]
+            val query = _.remove(k)
+            val complete = _.flatMap(deferred.complete).void
+          }
+          v <- handleOp(op, deferred)
+        } yield v
+
+        def set(k: Key, v: Value, expireAt: Option[Long] = None): F[Unit] =
+          for {
+            deferred <- Deferred[F, Unit]
+            op = new Op[F] {
+              type R = F[Unit]
+              val query = _.set(k, v, expireAt)
+              val complete = _.flatMap(deferred.complete(_)).void
+            }
+            v <- handleOp(op, deferred)
+          } yield v
+
+        def subscribe(k: Key): Resource[F, Stream[F, Value]] =
+          for {
+            deferred <- Resource.eval(
+              Deferred[F, Resource[F, Stream[F, Value]]]
+            )
+            op = new Op[F] {
+              type R = Resource[F, Stream[F, Value]]
+              val query = _.subscribe(k)
+              val complete = deferred.complete(_).void
+            }
+            v <- Resource.eval(handleOp(op, deferred)).flatten
+          } yield v
+
+        def publish(k: Key, v: Value): F[Unit] = for {
+          deferred <- Deferred[F, Unit]
+          op = new Op[F] {
+            type R = F[Unit]
+            val query = _.publish(k, v)
+            val complete = _.flatMap(deferred.complete).void
+          }
+          v <- handleOp(op, deferred)
+        } yield v
+
+        private final def handleOp[A](
+            op: Op[F],
+            deferred: Deferred[F, A]
+        ): F[A] =
+          val send = channel
+            .send(op)
+            .flatMap(x =>
+              MonadThrow[F]
+                .fromEither(x.leftMap(_ => new Exception("channel closed")))
+            )
+          send *> deferred.get
+      }
+      _ <- channel.stream
+        .evalMap { op =>
+          op.run(db)
+        }
+        .compile
+        .drain
+        .background
+    } yield wrapped
+
+  private trait Op[F[_]] {
+    type R
+    val query: DB[F] => R
+    val complete: R => F[Unit]
+    inline final def run(db: DB[F]) = complete(query(db))
+  }
 
   private final class RefDB[F[_]: Async: Temporal: Clock](
       ref: Ref[F, State[F]],

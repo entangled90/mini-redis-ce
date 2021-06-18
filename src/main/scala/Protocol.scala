@@ -69,30 +69,31 @@ object Protocol:
         first match
           case '+' =>
             val (before, after) = untilCarriageRet(chunk)
-            Right(Simple(new String(before.toArray)), after)
+            Right(Some(Simple(new String(before.toArray))), after)
           case '-' =>
             val (before, after) = untilCarriageRet(chunk)
-            Right(Error(new String(before.toArray)), after)
+            Right(Some(Error(new String(before.toArray))), after)
 
           case ':' =>
             val (before, after) = untilCarriageRet(chunk)
-            Right((Integer(readInt(before)), after))
+            Right(Some(Integer(readInt(before))), after)
           case '$' =>
             val (len, after) = readLen(chunk)
             val (payload, finalRest) = after.splitAt(len)
             // drop \r\n
-            Right((Bulk(payload), finalRest.drop(2)))
+            Right(Some((Bulk(payload))), finalRest.drop(2))
           case '*' =>
             val (n, after) = readLen(chunk)
-            if n == -1 then Right((Nil, after))
+            if n == -1 then Right((Some(Nil), after))
             else
               readN(n, after).map { case (msgs, rest) =>
-                (Arr(msgs.toVector), rest.drop(2))
+                (Some(Arr(msgs.toVector)), rest.drop(2))
               }
           case other =>
             val (before, after) = untilCarriageRet(input)
             val splitted = splitBy(before, ' '.toByte)
-            Right((Arr(splitted), after))
+            if splitted.nonEmpty then Right(Some((Arr(splitted))), after)
+            else Right(None, after)
 
     def readN(
         n: Int,
@@ -102,7 +103,7 @@ object Protocol:
       else
         readOne(chunk).flatMap { (msg, rest) =>
           readN(n - 1, rest).map { (msgs, rest) =>
-            (msg +: msgs, rest)
+            (msg.toVector ++ msgs, rest)
           }
         }
 
@@ -111,7 +112,8 @@ object Protocol:
         case Some((chunk, rest)) =>
           readOne(chunk) match {
             case Right((msg, rem)) =>
-              Pull.output1(msg).as(Some(Stream.chunk[F, Byte](rem) ++ rest))
+              val next = if rem.isEmpty then rest else Stream.chunk(rem) ++ rest
+              msg.fold(Pull.done)(Pull.output1(_)).as(Some(next))
             case Left(ex) =>
               Pull.raiseError(ex)
           }
@@ -144,6 +146,6 @@ object Protocol:
   private type ParseResultT[L[_]] =
     Either[Throwable, (L[Protocol], Chunk[Byte])]
 
-  private type ParseResultSingle = ParseResultT[Id]
+  private type ParseResultSingle = ParseResultT[Option]
 
   private type ParseResultN = ParseResultT[Vector]
