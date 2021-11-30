@@ -12,7 +12,7 @@ object Server:
 
   given loggerName: LoggerName = LoggerName("Server")
 
-  def apply[F[_]: Network: Async](
+  def apply[F[_]: Network: Async: Logger.Instance](
       db: DB[F],
       port: Option[Port] = Port.fromInt(5005),
       maxConnections: Int = 500

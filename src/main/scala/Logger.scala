@@ -1,11 +1,14 @@
 import scala.reflect.ClassTag
 import cats.effect._
+import cats.effect.syntax.all._
 import cats._
 import cats.syntax.all._
 import java.io.PrintStream
 import java.time.LocalDateTime
 import scala.math.Ordering
 import math.Ordered.orderingToOrdered
+import cats.effect.std._
+import fs2._
 
 opaque type LoggerName = String
 
@@ -33,20 +36,36 @@ object LogLevel:
   )
 
 object Logger:
+
+  trait Instance[F[_]]:
+    def log(str: String): F[Unit]
+
+  object Instance:
+    def apply[F[_]: Async]: Resource[F, Instance[F]] =
+      for {
+        q <- Resource.eval(Queue.bounded[F, String](1024 * 1024))
+        inst = new Instance[F] {
+          def log(str: String): F[Unit] = q.offer(str)
+        }
+        _ <- Stream
+          .fromQueueUnterminated(q)
+          .evalMap(s => Sync[F].delay(println(s)))
+          .compile
+          .drain
+          .background
+      } yield inst
+
+    def simple[F[_]: Sync] = new Logger.Instance[F] {
+      def log(s: String) = Sync[F].delay(println(s))
+    }
+
   inline def log[F[_]: Sync](
       level: LogLevel,
       msg: String,
       ps: PrintStream = System.out
-  )(using name: LoggerName): F[Unit] =
+  )(using name: LoggerName, instance: Instance[F]): F[Unit] =
     inline if level >= LogLevel.MinLevel then
-      Sync[F].delay {
-        ps.synchronized {
-          ps.print(
-            s"[${LogLevel.Levels(level)}] ${LocalDateTime.now} ${Thread.currentThread.getName} "
-          )
-          ps.print(name)
-          ps.print(" - ")
-          ps.println(msg)
-        }
-      }
+      instance.log(
+        s"[${LogLevel.Levels(level)}] ${LocalDateTime.now} ${Thread.currentThread.getName} $name - $msg"
+      )
     else Applicative[F].unit

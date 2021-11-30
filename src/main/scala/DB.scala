@@ -31,7 +31,7 @@ object DB:
   object State:
     private[DB] def empty[F[_]] = State[F](Map.empty, Map.empty, Long.MinValue)
 
-  def ref[F[_]: Async: Temporal: Clock](
+  def ref[F[_]: Async: Temporal: Clock: Logger.Instance](
       queueSize: Int = 1024,
       maxQueued: Int = 1024
   ): Resource[F, DB[F]] =
@@ -129,7 +129,7 @@ object DB:
     inline final def run(db: DB[F]) = complete(query(db))
   }
 
-  private final class RefDB[F[_]: Async: Temporal: Clock](
+  private final class RefDB[F[_]: Async: Temporal: Clock: Logger.Instance](
       ref: Ref[F, State[F]],
       queueSize: Int = 1024,
       maxQueued: Int = 1024

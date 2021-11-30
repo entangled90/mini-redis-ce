@@ -3,7 +3,7 @@ import cats.effect._
 import cats.syntax.all._
 import scala.concurrent.duration._
 
-class DBSpec extends CatsEffectSuite {
+class DBSpec extends BaseSuite {
   test("get/put/remove no expire") {
     DB.ref[IO]().use { db =>
       for {
@@ -17,6 +17,7 @@ class DBSpec extends CatsEffectSuite {
       }
     }
   }
+  
   test("Basic pub/sub") {
     DB.ref[IO]()
       .use { db =>
