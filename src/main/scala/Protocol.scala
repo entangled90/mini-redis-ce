@@ -2,6 +2,7 @@ import fs2._
 import cats.syntax.all._
 import Protocol._
 import cats._
+import scala.util.Try
 
 enum Protocol:
   case Simple(s: String)
@@ -32,6 +33,15 @@ enum Protocol:
       )
     case Nil =>
       NilChunk
+
+  override def toString: String = this match
+    case Simple(s)  => "[simple]: s"
+    case Error(msg) => "[error]: $msg"
+    case Bulk(b) =>
+      s"[bulk]: ${Try(new String(b.toArray)).getOrElse(b.toString)}"
+    case Nil        => "Nil"
+    case Integer(i) => "[int]: i.toString"
+    case Arr(arr)   => s"[array]: ${arr.map(_.toString)}"
 
 object Protocol:
 

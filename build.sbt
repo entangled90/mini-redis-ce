@@ -1,5 +1,5 @@
-val scala3Version = "3.0.0"
-val fs2Version = "3.0.4"
+val scala3Version = "3.1.0"
+val fs2Version = "3.2.2"
 
 lazy val root = project
   .in(file("."))
@@ -16,8 +16,7 @@ lazy val root = project
     run / fork := true,
     javaOptions ++= Seq(
       "-XX:+UnlockExperimentalVMOptions",
-      "-XX:+EnableJVMCI",
-      "-XX:+UseJVMCICompiler",
-      "-Xmx4096M"
+      "-Xmx4096M",
+      "-XX:+UseZGC"
     )
   )

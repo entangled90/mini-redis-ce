@@ -26,7 +26,7 @@ object LogLevel:
   inline val Info = 200
   inline val Debug = 100
 
-  inline val MinLevel = 0
+  inline val MinLevel = 100
 
   val Levels = Map(
     Error -> "ERROR",

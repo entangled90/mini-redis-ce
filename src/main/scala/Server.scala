@@ -1,6 +1,6 @@
 import fs2.io.net._
 import cats.effect._
-import cats.syntax.all._
+import cats.implicits._
 import com.comcast.ip4s.Port
 import fs2._
 import scala.util.control.NonFatal
@@ -21,9 +21,11 @@ object Server:
     Network[F]
       .server(None, port)
       .map { client =>
-        Stream.eval(log[F](LogLevel.Info, s"Client connected $client")) >>
+        val clientId = client.toString.takeRight(8)
+        Stream.eval(log[F](LogLevel.Info, s"Client connected $clientId")) >>
           client.reads
             .through(Protocol.read)
+            .debug(p => s"$clientId: $p")
             .flatMap(
               handler(_)
                 .through(_.map(_.bytes).flatMap(Stream.chunk))
@@ -41,7 +43,7 @@ object Server:
       .parJoin(maxConnections)
       .drain
 
-  def handleCommand[F[_]: Concurrent](
+  def handleCommand[F[_]: Async](
       db: DB[F]
   )(protocol: Protocol): Stream[F, Protocol] =
     def invalidCmd =
@@ -52,6 +54,7 @@ object Server:
         Right(k)
       case Protocol.Bulk(bulk) =>
         Either.catchNonFatal(String(bulk.toArray))
+
       case _ =>
         Left(new Exception(s"Invalid protocol type for key $k"))
 
