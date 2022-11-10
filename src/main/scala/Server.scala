@@ -43,9 +43,9 @@ object Server:
       .parJoin(maxConnections)
       .drain
 
-  def handleCommand[F[_]: Async](
-      db: DB[F]
-  )(protocol: Protocol): Stream[F, Protocol] =
+  def handleCommand[F[_]: Async](db: DB[F])(
+      protocol: Protocol
+  ): Stream[F, Protocol] =
     def invalidCmd =
       Stream(Protocol.Error(s"Invalid command $protocol"))
 

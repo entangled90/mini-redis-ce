@@ -163,13 +163,11 @@ object DB:
         }
         .flatMap {
           _.traverse { entry =>
-            if entry.expiresAt == expireAt then
-              scheduleExpire(k, entry).start.as(entry.data)
+            if entry.expiresAt == expireAt then scheduleExpire(k, entry).start.as(entry.data)
             else entry.data.pure[F]
           }
         }
-    }
-      .flatTap(r => log(LogLevel.Debug, s"GET $k $r expireAt=$expireAt"))
+    }.flatTap(r => log(LogLevel.Debug, s"GET $k $r expireAt=$expireAt"))
 
     def remove(k: Key): F[Unit] =
       ref

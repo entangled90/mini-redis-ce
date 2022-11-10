@@ -34,9 +34,12 @@ class ProtocolTest extends munit.FunSuite:
   test("serialize/deserialize bulk") {
     val arr = Chunk.array("ciao".getBytes)
     val bulk = Bulk(arr)
-    val Vector(Bulk(obtained)) =
-      read[SyncIO](Stream.chunk(bulk.bytes)).compile.toVector.unsafeRunSync()
-    assertEquals(obtained, arr)
+    read[SyncIO](Stream.chunk(bulk.bytes)).compile.toVector.unsafeRunSync() match {
+      case Vector(Bulk(obtained)) =>
+        assertEquals(obtained, arr)
+      case res =>
+        fail(s"invalid result: $res")
+    }
   }
 
   test("serialize/deserialize int") {
