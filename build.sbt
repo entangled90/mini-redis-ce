@@ -14,7 +14,7 @@ lazy val root = project
       "co.fs2" %%% "fs2-core" % fs2Version,
       "co.fs2" %%% "fs2-io" % fs2Version,
       "org.typelevel" %%% "cats-effect" % catsV,
-      "com.armanbilge" %%% "epollcat" % "0.1.2", // Runtime
+      "com.armanbilge" %%% "epollcat" % "0.1.3", // Runtime
       "org.scalameta" %%% "munit" % "1.0.0-M6" % Test
       // "org.typelevel" %%% "munit-cats-effect-3" % "1.0.7" % Test
     ),
@@ -24,9 +24,12 @@ lazy val root = project
     //   "-Xmx4096M",
     //   "-XX:+UseZGC"
     // )
-    // nativeConfig ~= {
-    //   _.withLTO(LTO.thin)
-    //     .withMode(Mode.releaseFast)
-    //     .withGC(GC.commix)
-    // }
+    ,
+    nativeConfig ~= {
+      // _.withLTO(LTO.thin)
+      _.withMode(Mode.releaseFast)
+        .withIncrementalCompilation(true)
+      // .withGC(GC.commix)
+
+    }
   )

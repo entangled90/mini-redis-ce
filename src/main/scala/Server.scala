@@ -21,7 +21,6 @@ object Server:
     Network[F]
       .server(None, port)
       .map { client =>
-        println("Client!!")
         val clientId = client.toString.takeRight(8)
         Stream.eval(log[F](LogLevel.Info, s"Client connected $clientId")) >>
           client.reads
