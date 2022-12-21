@@ -21,11 +21,11 @@ object Server:
     Network[F]
       .server(None, port)
       .map { client =>
+        println("Client!!")
         val clientId = client.toString.takeRight(8)
         Stream.eval(log[F](LogLevel.Info, s"Client connected $clientId")) >>
           client.reads
             .through(Protocol.read)
-            .debug(p => s"$clientId: $p")
             .flatMap(
               handler(_)
                 .through(_.map(_.bytes).flatMap(Stream.chunk))

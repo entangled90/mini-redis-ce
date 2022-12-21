@@ -3,11 +3,13 @@ import cats.implicits._
 import cats.effect.implicits._
 import fs2._
 
-object Main extends IOApp {
+object Main extends IOApp.Simple {
   given loggerName: LoggerName = LoggerName("main")
-  def run(args: List[String]) = {
+  def run: IO[Unit] = {
     val stream = for {
       given Logger.Instance[IO] <- Stream.resource(Logger.Instance[IO])
+
+      _ <- Stream.eval(IO.println("Starting"))
       //  = logInstance
       db <- Stream.resource(DB.ref[IO]())
       _ <- Server[IO](db).concurrently(
